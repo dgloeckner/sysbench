@@ -1,6 +1,6 @@
 /*
 ** Public Lua/C API.
-** Copyright (C) 2005-2020 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2017 Mike Pall. See Copyright Notice in luajit.h
 **
 ** Major portions taken verbatim or adapted from the Lua interpreter.
 ** Copyright (C) 1994-2008 Lua.org, PUC-Rio. See Copyright Notice in lua.h
@@ -892,8 +892,7 @@ LUA_API int lua_next(lua_State *L, int idx)
 LUA_API const char *lua_getupvalue(lua_State *L, int idx, int n)
 {
   TValue *val;
-  GCobj *o;
-  const char *name = lj_debug_uvnamev(index2adr(L, idx), (uint32_t)(n-1), &val, &o);
+  const char *name = lj_debug_uvnamev(index2adr(L, idx), (uint32_t)(n-1), &val);
   if (name) {
     copyTV(L, L->top, val);
     incr_top(L);
@@ -1079,14 +1078,13 @@ LUA_API const char *lua_setupvalue(lua_State *L, int idx, int n)
 {
   cTValue *f = index2adr(L, idx);
   TValue *val;
-  GCobj *o;
   const char *name;
   api_checknelems(L, 1);
-  name = lj_debug_uvnamev(f, (uint32_t)(n-1), &val, &o);
+  name = lj_debug_uvnamev(f, (uint32_t)(n-1), &val);
   if (name) {
     L->top--;
     copyTV(L, val, L->top);
-    lj_gc_barrier(L, o, L->top);
+    lj_gc_barrier(L, funcV(f), L->top);
   }
   return name;
 }

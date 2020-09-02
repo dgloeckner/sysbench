@@ -1,6 +1,6 @@
 /*
 ** Trace recorder (bytecode -> SSA IR).
-** Copyright (C) 2005-2020 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2017 Mike Pall. See Copyright Notice in luajit.h
 */
 
 #define lj_record_c
@@ -1058,7 +1058,7 @@ static TRef rec_mm_len(jit_State *J, TRef tr, TValue *tv)
     lj_record_call(J, func, 2);
   } else {
     if (LJ_52 && tref_istab(tr))
-      return emitir(IRTI(IR_ALEN), tr, TREF_NIL);
+      return lj_ir_call(J, IRCALL_lj_tab_len, tr);
     lj_trace_err(J, LJ_TRERR_NOMM);
   }
   return 0;  /* No result yet. */
@@ -1860,8 +1860,6 @@ static void rec_varg(jit_State *J, BCReg dst, ptrdiff_t nresults)
       lj_trace_err_info(J, LJ_TRERR_NYIBC);
     }
   }
-  if (J->baseslot + J->maxslot >= LJ_MAX_JSLOTS)
-    lj_trace_err(J, LJ_TRERR_STACKOV);
 }
 
 /* -- Record allocations -------------------------------------------------- */
@@ -2191,7 +2189,7 @@ void lj_record_ins(jit_State *J)
     if (tref_isstr(rc))
       rc = emitir(IRTI(IR_FLOAD), rc, IRFL_STR_LEN);
     else if (!LJ_52 && tref_istab(rc))
-      rc = emitir(IRTI(IR_ALEN), rc, TREF_NIL);
+      rc = lj_ir_call(J, IRCALL_lj_tab_len, rc);
     else
       rc = rec_mm_len(J, rc, rcv);
     break;
@@ -2472,9 +2470,8 @@ void lj_record_ins(jit_State *J)
 #undef rbv
 #undef rcv
 
-  /* Limit the number of recorded IR instructions and constants. */
-  if (J->cur.nins > REF_FIRST+(IRRef)J->param[JIT_P_maxrecord] ||
-      J->cur.nk < REF_BIAS-(IRRef)J->param[JIT_P_maxirconst])
+  /* Limit the number of recorded IR instructions. */
+  if (J->cur.nins > REF_FIRST+(IRRef)J->param[JIT_P_maxrecord])
     lj_trace_err(J, LJ_TRERR_TRACEOV);
 }
 

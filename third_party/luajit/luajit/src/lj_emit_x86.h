@@ -1,6 +1,6 @@
 /*
 ** x86/x64 instruction emitter.
-** Copyright (C) 2005-2020 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2017 Mike Pall. See Copyright Notice in luajit.h
 */
 
 /* -- Emit basic instructions --------------------------------------------- */
@@ -274,12 +274,10 @@ static void emit_movmroi(ASMState *as, Reg base, int32_t ofs, int32_t i)
 /* mov r, i / xor r, r */
 static void emit_loadi(ASMState *as, Reg r, int32_t i)
 {
-  /* XOR r,r is shorter, but modifies the flags. This is bad for HIOP/jcc. */
+  /* XOR r,r is shorter, but modifies the flags. This is bad for HIOP. */
   if (i == 0 && !(LJ_32 && (IR(as->curins)->o == IR_HIOP ||
 			    (as->curins+1 < as->T->nins &&
-			     IR(as->curins+1)->o == IR_HIOP))) &&
-		!((*as->mcp == 0x0f && (as->mcp[1] & 0xf0) == XI_JCCn) ||
-		  (*as->mcp & 0xf0) == XI_JCCs)) {
+			     IR(as->curins+1)->o == IR_HIOP)))) {
     emit_rr(as, XO_ARITH(XOg_XOR), r, r);
   } else {
     MCode *p = as->mcp;
@@ -559,7 +557,10 @@ static void emit_storeofs(ASMState *as, IRIns *ir, Reg r, Reg base, int32_t ofs)
 static void emit_addptr(ASMState *as, Reg r, int32_t ofs)
 {
   if (ofs) {
-    emit_gri(as, XG_ARITHi(XOg_ADD), r|REX_GC64, ofs);
+    if ((as->flags & JIT_F_LEA_AGU))
+      emit_rmro(as, XO_LEA, r|REX_GC64, r, ofs);
+    else
+      emit_gri(as, XG_ARITHi(XOg_ADD), r|REX_GC64, ofs);
   }
 }
 

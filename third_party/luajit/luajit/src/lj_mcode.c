@@ -1,6 +1,6 @@
 /*
 ** Machine code management.
-** Copyright (C) 2005-2020 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2017 Mike Pall. See Copyright Notice in luajit.h
 */
 
 #define lj_mcode_c
@@ -66,8 +66,8 @@ void lj_mcode_sync(void *start, void *end)
 
 static void *mcode_alloc_at(jit_State *J, uintptr_t hint, size_t sz, DWORD prot)
 {
-  void *p = LJ_WIN_VALLOC((void *)hint, sz,
-			  MEM_RESERVE|MEM_COMMIT|MEM_TOP_DOWN, prot);
+  void *p = VirtualAlloc((void *)hint, sz,
+			 MEM_RESERVE|MEM_COMMIT|MEM_TOP_DOWN, prot);
   if (!p && !hint)
     lj_trace_err(J, LJ_TRERR_MCODEAL);
   return p;
@@ -82,7 +82,7 @@ static void mcode_free(jit_State *J, void *p, size_t sz)
 static int mcode_setprot(void *p, size_t sz, DWORD prot)
 {
   DWORD oprot;
-  return !LJ_WIN_VPROTECT(p, sz, prot, &oprot);
+  return !VirtualProtect(p, sz, prot, &oprot);
 }
 
 #elif LJ_TARGET_POSIX
@@ -216,8 +216,18 @@ static void mcode_protect(jit_State *J, int prot)
 static void *mcode_alloc(jit_State *J, size_t sz)
 {
   /* Target an address in the static assembler code (64K aligned).
-  ** Try addresses within a distance of J->allocbase..J->allocbase+J->range.
-  ** First try a contiguous area below the last one. */
+  ** Try addresses within a distance of target-range/2+1MB..target+range/2-1MB.
+  ** Use half the jump range so every address in the range can reach any other.
+  */
+#if LJ_TARGET_MIPS
+  /* Use the middle of the 256MB-aligned region. */
+  uintptr_t target = ((uintptr_t)(void *)lj_vm_exit_handler &
+		      ~(uintptr_t)0x0fffffffu) + 0x08000000u;
+#else
+  uintptr_t target = (uintptr_t)(void *)lj_vm_exit_handler & ~(uintptr_t)0xffff;
+#endif
+  const uintptr_t range = (1u << (LJ_TARGET_JUMPRANGE-1)) - (1u << 21);
+  /* First try a contiguous area below the last one. */
   uintptr_t hint = J->mcarea ? (uintptr_t)J->mcarea - sz : 0;
   int i;
   /* Limit probing iterations, depending on the available pool size. */
@@ -226,16 +236,15 @@ static void *mcode_alloc(jit_State *J, size_t sz)
       void *p = mcode_alloc_at(J, hint, sz, MCPROT_GEN);
 
       if (mcode_validptr(p) &&
-          ((uintptr_t)p + sz - J->target < J->range ||
-           J->target - (uintptr_t)p < J->range))
+	  ((uintptr_t)p + sz - target < range || target - (uintptr_t)p < range))
 	return p;
       if (p) mcode_free(J, p, sz);  /* Free badly placed area. */
     }
     /* Next try probing 64K-aligned pseudo-random addresses. */
     do {
       hint = LJ_PRNG_BITS(J, LJ_TARGET_JUMPRANGE-16) << 16;
-    } while (!(hint + sz < J->range));
-    hint = J->allocbase + hint;
+    } while (!(hint + sz < range+range));
+    hint = target + hint - range;
   }
   lj_trace_err(J, LJ_TRERR_MCODEAL);  /* Give up. OS probably ignores hints? */
   return NULL;
@@ -246,7 +255,7 @@ static void *mcode_alloc(jit_State *J, size_t sz)
 /* All memory addresses are reachable by relative jumps. */
 static void *mcode_alloc(jit_State *J, size_t sz)
 {
-#if defined(__OpenBSD__) || LJ_TARGET_UWP
+#ifdef __OpenBSD__
   /* Allow better executable memory allocation for OpenBSD W^X mode. */
   void *p = mcode_alloc_at(J, 0, sz, MCPROT_RUN);
   if (p && mcode_setprot(p, sz, MCPROT_GEN)) {

@@ -1,6 +1,6 @@
 /*
 ** String scanning.
-** Copyright (C) 2005-2020 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2017 Mike Pall. See Copyright Notice in luajit.h
 */
 
 #include <math.h>
@@ -370,11 +370,9 @@ static StrScanFmt strscan_bin(const uint8_t *p, TValue *o,
 }
 
 /* Scan string containing a number. Returns format. Returns value in o. */
-StrScanFmt lj_strscan_scan(const uint8_t *p, MSize len, TValue *o,
-			   uint32_t opt)
+StrScanFmt lj_strscan_scan(const uint8_t *p, TValue *o, uint32_t opt)
 {
   int32_t neg = 0;
-  const uint8_t *pe = p + len;
 
   /* Remove leading space, parse sign and non-numbers. */
   if (LJ_UNLIKELY(!lj_char_isdigit(*p))) {
@@ -392,7 +390,7 @@ StrScanFmt lj_strscan_scan(const uint8_t *p, MSize len, TValue *o,
 	p += 3;
       }
       while (lj_char_isspace(*p)) p++;
-      if (*p || p < pe) return STRSCAN_ERROR;
+      if (*p) return STRSCAN_ERROR;
       o->u64 = tmp.u64;
       return STRSCAN_NUM;
     }
@@ -490,16 +488,16 @@ StrScanFmt lj_strscan_scan(const uint8_t *p, MSize len, TValue *o,
       while (lj_char_isspace(*p)) p++;
       if (*p) return STRSCAN_ERROR;
     }
-    if (p < pe) return STRSCAN_ERROR;
 
     /* Fast path for decimal 32 bit integers. */
     if (fmt == STRSCAN_INT && base == 10 &&
 	(dig < 10 || (dig == 10 && *sp <= '2' && x < 0x80000000u+neg))) {
+      int32_t y = neg ? -(int32_t)x : (int32_t)x;
       if ((opt & STRSCAN_OPT_TONUM)) {
-	o->n = neg ? -(double)x : (double)x;
+	o->n = (double)y;
 	return STRSCAN_NUM;
       } else {
-	o->i = neg ? -(int32_t)x : (int32_t)x;
+	o->i = y;
 	return STRSCAN_INT;
       }
     }
@@ -526,7 +524,7 @@ StrScanFmt lj_strscan_scan(const uint8_t *p, MSize len, TValue *o,
 
 int LJ_FASTCALL lj_strscan_num(GCstr *str, TValue *o)
 {
-  StrScanFmt fmt = lj_strscan_scan((const uint8_t *)strdata(str), str->len, o,
+  StrScanFmt fmt = lj_strscan_scan((const uint8_t *)strdata(str), o,
 				   STRSCAN_OPT_TONUM);
   lua_assert(fmt == STRSCAN_ERROR || fmt == STRSCAN_NUM);
   return (fmt != STRSCAN_ERROR);
@@ -535,7 +533,7 @@ int LJ_FASTCALL lj_strscan_num(GCstr *str, TValue *o)
 #if LJ_DUALNUM
 int LJ_FASTCALL lj_strscan_number(GCstr *str, TValue *o)
 {
-  StrScanFmt fmt = lj_strscan_scan((const uint8_t *)strdata(str), str->len, o,
+  StrScanFmt fmt = lj_strscan_scan((const uint8_t *)strdata(str), o,
 				   STRSCAN_OPT_TOINT);
   lua_assert(fmt == STRSCAN_ERROR || fmt == STRSCAN_NUM || fmt == STRSCAN_INT);
   if (fmt == STRSCAN_INT) setitype(o, LJ_TISNUM);

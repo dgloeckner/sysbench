@@ -1,6 +1,6 @@
 /*
 ** Trace recorder for C data operations.
-** Copyright (C) 2005-2020 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2017 Mike Pall. See Copyright Notice in luajit.h
 */
 
 #define lj_ffrecord_c
@@ -1530,10 +1530,8 @@ void LJ_FASTCALL recff_cdata_arith(jit_State *J, RecordFFData *rd)
   }
   {
     TRef tr;
-    MMS mm = (MMS)rd->data;
-    if ((mm == MM_len || mm == MM_concat ||
-	 (!(tr = crec_arith_int64(J, sp, s, mm)) &&
-	  !(tr = crec_arith_ptr(J, sp, s, mm)))) &&
+    if (!(tr = crec_arith_int64(J, sp, s, (MMS)rd->data)) &&
+	!(tr = crec_arith_ptr(J, sp, s, (MMS)rd->data)) &&
 	!(tr = crec_arith_meta(J, sp, s, cts, rd)))
       return;
     J->base[0] = tr;
@@ -1881,8 +1879,6 @@ void LJ_FASTCALL lj_crecord_tonumber(jit_State *J, RecordFFData *rd)
       d = ctype_get(cts, CTID_DOUBLE);
     J->base[0] = crec_ct_tv(J, d, 0, J->base[0], &rd->argv[0]);
   } else {
-    /* Specialize to the ctype that couldn't be converted. */
-    argv2cdata(J, J->base[0], &rd->argv[0]);
     J->base[0] = TREF_NIL;
   }
 }

@@ -1,6 +1,6 @@
 /*
 ** Package library.
-** Copyright (C) 2005-2020 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2017 Mike Pall. See Copyright Notice in luajit.h
 **
 ** Major portions taken verbatim or adapted from the Lua interpreter.
 ** Copyright (C) 1994-2012 Lua.org, PUC-Rio. See Copyright Notice in lua.h
@@ -76,20 +76,6 @@ static const char *ll_bcsym(void *lib, const char *sym)
 BOOL WINAPI GetModuleHandleExA(DWORD, LPCSTR, HMODULE*);
 #endif
 
-#if LJ_TARGET_UWP
-void *LJ_WIN_LOADLIBA(const char *path)
-{
-  DWORD err = GetLastError();
-  wchar_t wpath[256];
-  HANDLE lib = NULL;
-  if (MultiByteToWideChar(CP_ACP, 0, path, -1, wpath, 256) > 0) {
-    lib = LoadPackagedLibrary(wpath, 0);
-  }
-  SetLastError(err);
-  return lib;
-}
-#endif
-
 #undef setprogdir
 
 static void setprogdir(lua_State *L)
@@ -133,7 +119,7 @@ static void ll_unloadlib(void *lib)
 
 static void *ll_load(lua_State *L, const char *path, int gl)
 {
-  HINSTANCE lib = LJ_WIN_LOADLIBA(path);
+  HINSTANCE lib = LoadLibraryExA(path, NULL, 0);
   if (lib == NULL) pusherror(L);
   UNUSED(gl);
   return lib;
@@ -146,25 +132,17 @@ static lua_CFunction ll_sym(lua_State *L, void *lib, const char *sym)
   return f;
 }
 
-#if LJ_TARGET_UWP
-EXTERN_C IMAGE_DOS_HEADER __ImageBase;
-#endif
-
 static const char *ll_bcsym(void *lib, const char *sym)
 {
   if (lib) {
     return (const char *)GetProcAddress((HINSTANCE)lib, sym);
   } else {
-#if LJ_TARGET_UWP
-    return (const char *)GetProcAddress((HINSTANCE)&__ImageBase, sym);
-#else
     HINSTANCE h = GetModuleHandleA(NULL);
     const char *p = (const char *)GetProcAddress(h, sym);
     if (p == NULL && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS|GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
 					(const char *)ll_bcsym, &h))
       p = (const char *)GetProcAddress(h, sym);
     return p;
-#endif
   }
 }
 
@@ -255,7 +233,7 @@ static int ll_loadfunc(lua_State *L, const char *path, const char *name, int r)
       const char *bcdata = ll_bcsym(*reg, mksymname(L, name, SYMPREFIX_BC));
       lua_pop(L, 1);
       if (bcdata) {
-	if (luaL_loadbuffer(L, bcdata, ~(size_t)0, name) != 0)
+	if (luaL_loadbuffer(L, bcdata, LJ_MAX_BUF, name) != 0)
 	  return PACKAGE_ERR_LOAD;
 	return 0;
       }
@@ -320,23 +298,9 @@ static const char *searchpath (lua_State *L, const char *name,
     const char *filename = luaL_gsub(L, lua_tostring(L, -1),
 				     LUA_PATH_MARK, name);
     lua_remove(L, -2);  /* remove path template */
-    goto check_readable; /* suppress "unused label" warning */
-check_readable:
     if (readable(filename))  /* does file exist and is readable? */
       return filename;  /* return that file name */
     lua_pushfstring(L, "\n\tno file " LUA_QS, filename);
-#if LJ_TARGET_OSX || LJ_TARGET_IOS
-    /* if *.dylib is missing, try *.so */
-    size_t len = strlen(filename);
-    if (len > 6 && strcmp(filename + len - 6, ".dylib") == 0) {
-      luaL_addvalue(&msg);  /* concatenate error msg. entry */
-      lua_pushlstring(L, filename, len - 6);
-      filename = lua_pushfstring(L, "%s.so", lua_tostring(L, -1));
-      lua_insert(L, -3); /* sink new filename below old one */
-      lua_pop(L, 2);
-      goto check_readable;
-    }
-#endif
     lua_remove(L, -2);  /* remove file name */
     luaL_addvalue(&msg);  /* concatenate error msg. entry */
   }
@@ -426,7 +390,7 @@ static int lj_cf_package_loader_preload(lua_State *L)
   if (lua_isnil(L, -1)) {  /* Not found? */
     const char *bcname = mksymname(L, name, SYMPREFIX_BC);
     const char *bcdata = ll_bcsym(NULL, bcname);
-    if (bcdata == NULL || luaL_loadbuffer(L, bcdata, ~(size_t)0, name) != 0)
+    if (bcdata == NULL || luaL_loadbuffer(L, bcdata, LJ_MAX_BUF, name) != 0)
       lua_pushfstring(L, "\n\tno field package.preload['%s']", name);
   }
   return 1;

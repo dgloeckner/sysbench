@@ -1,6 +1,6 @@
 /*
 ** FFI C call handling.
-** Copyright (C) 2005-2020 Mike Pall. See Copyright Notice in luajit.h
+** Copyright (C) 2005-2017 Mike Pall. See Copyright Notice in luajit.h
 */
 
 #include "lj_obj.h"
@@ -337,8 +337,7 @@
   if (LJ_TARGET_IOS && isva) { \
     /* IOS: All variadic arguments are on the stack. */ \
   } else if (isfp) {  /* Try to pass argument in FPRs. */ \
-    int n2 = ctype_isvector(d->info) ? 1 : \
-	     isfp == 1 ? n : (d->size >> (4-isfp)); \
+    int n2 = ctype_isvector(d->info) ? 1 : n*isfp; \
     if (nfpr + n2 <= CCALL_NARG_FPR) { \
       dp = &cc->fpr[nfpr]; \
       nfpr += n2; \
@@ -875,8 +874,7 @@ noth:  /* Not a homogeneous float/double aggregate. */
   return 0;  /* Struct is in GPRs. */
 }
 
-static void ccall_copy_struct(CCallState *cc, CType *ctr, void *dp, void *sp,
-			      int ft)
+void ccall_copy_struct(CCallState *cc, CType *ctr, void *dp, void *sp, int ft)
 {
   if (LJ_ABI_SOFTFP ? ft :
       ((ft & 3) == FTYPE_FLOAT || (ft >> 2) == FTYPE_FLOAT)) {
